@@ -400,16 +400,50 @@ def minmax_normalize(data, min_val=None, max_val=None):
 
     return normalized_data, min_val, max_val
 
+def mol_feature_merge(smiles_list):
+    """
+    合并分子特征：
+    1. 使用 RDKit 提取分子指纹（Morgan Fingerprint）。
+    2. 从生成的 npz 文件中加载 SciBERT 的 SMILES 表征。
+    3. 将两部分特征拼接在一起，返回一个 (num_samples, 1024+768) 的特征矩阵。
+
+    参数:
+    - smiles_list: 包含 SMILES 字符串的列表。
+
+    返回:
+    - 合并后的特征矩阵，形状为 (num_samples, 1024+768)。
+    """
+    # 使用 RDKit 提取分子指纹
+    molecules = [Chem.MolFromSmiles(smiles) for smiles in smiles_list]
+    structure_feature = np.array(
+        [AllChem.GetMorganFingerprintAsBitVect(mol, 4, nBits=1024) for mol in molecules]
+    )
+
+    # # 加载 SciBERT 特征
+    # scibert_npz_path = "/nas/shared/gmai/gawang/myrepo/InfoAlign/raw_data/pretrain/raw/smiles_embeddings.npz"
+    # scibert_feature = np.load(scibert_npz_path)["embeddings"]
+
+    # # 确保两部分特征的样本数量一致
+    # if structure_feature.shape[0] != scibert_feature.shape[0]:
+    #     raise ValueError(
+    #         f"Feature size mismatch: structure_feature has {structure_feature.shape[0]} samples, "
+    #         f"but scibert_feature has {scibert_feature.shape[0]} samples."
+    #     )
+
+    # # 拼接分子特征和 SciBERT 特征
+    # combined_feature = np.hstack([structure_feature, scibert_feature])
+
+    return structure_feature, molecules
+
+
+
 def create_nx_graph(folder, min_thres=0.6, min_sparsity=0.995, top_compound_gene_express=0.05):
 
     structure_df = pd.read_csv(f"{folder}/structure.csv.gz")
     mol_df = structure_df.drop_duplicates(subset="mol_id")
     smiles_list = mol_df["smiles"].tolist()
     all_mol_id = mol_df["mol_id"].tolist()
-    molecules = [Chem.MolFromSmiles(smiles) for smiles in smiles_list]
-    structure_feature = np.array(
-        [AllChem.GetMorganFingerprintAsBitVect(m, 4, nBits=1024) for m in molecules]
-    )
+    structure_feature, molecules = mol_feature_merge(smiles_list)
     # load cell nodes and features
     cp_bray_df = pd.read_csv(f"{folder}/CP-Bray.csv.gz")
     cp_jump_df = pd.read_csv(f"{folder}/CP-JUMP.csv.gz")

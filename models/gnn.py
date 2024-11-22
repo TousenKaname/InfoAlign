@@ -3,6 +3,7 @@ import torch.nn as nn
 
 from torch_geometric.nn import global_add_pool, global_mean_pool, global_max_pool
 from .conv import GNN_node, GNN_node_Virtualnode
+from .text_adapter import Text_Adapter
 
 from torch.distributions import Normal, Independent
 from torch.nn.functional import softplus
@@ -74,7 +75,7 @@ class GNN(torch.nn.Module):
         h_graph = self.pool(h_node, batched_data.batch)
 
         mu, sigma = self.dist_net(h_graph).chunk(2, dim=1)
-        sigma = softplus(sigma) + 1e-7 
+        sigma = softplus(sigma) + 1e-7
         p_z_given_x = Independent(Normal(loc=mu, scale=sigma), 1)
         
         out = []
@@ -138,12 +139,51 @@ class FineTuneGNN(nn.Module):
             nn.Linear(emb_dim, 2 * emb_dim, bias=True)
         )
 
+        self.text_adapter = Text_Adapter()
+        for param in self.text_adapter.parameters():
+            param.requires_grad = False
+
+        # MLP for text embedding alignment to graph space
+        self.text_mlp = MLP(
+            in_features=768,           # Assuming text embedding has 768 dimensions
+            hidden_features=emb_dim,    # Align text embedding to the same dimension as graph embedding
+            out_features=emb_dim,
+            act_layer=nn.GELU,
+            drop=drop_ratio,
+        )
+
+        # MLP for the fused feature projection
+        self.projector = MLP(
+            in_features=emb_dim + 768,    # Fused embedding size (after concatenation)
+            hidden_features=emb_dim,    # Projection back to emb_dim
+            out_features=emb_dim,
+            act_layer=nn.GELU,
+            drop=drop_ratio,
+        )
         # self.task_decoder = nn.Linear(emb_dim, num_tasks)
         self.task_decoder = MLP(emb_dim, hidden_features=4 * emb_dim, out_features=num_tasks)
     
     def forward(self, batched_data):
+        # caption = batched_data.caption
+        # text_embedding = self.text_adapter(caption)
+        # print(f'text_embedding.shape:  {text_embedding.last_hidden_state.shape}')#   torch.Size([1413, 221, 768])
+
+        # text_embedding_pooled = torch.mean(text_embedding.last_hidden_state, dim=1)
+        # print(f'text_embedding_pooled.shape: {text_embedding_pooled.shape}')  # [batch_size, 768]
+
+        # text_embedding_aligned = self.text_mlp(text_embedding_pooled)
+        # print(f'text_embedding_aligned.shape: {text_embedding_aligned.shape}')  # [batch_size, emb_dim]
+
         h_node, _ = self.graph_encoder(batched_data)
+        # print(f'h_node.shape:  {h_node.shape}') #torch.Size([33669, 300])
+
         h_graph = self.pool(h_node, batched_data.batch)
+        # print(f'h_graph.shape:  {h_graph.shape}') #torch.Size([1413, 300])
+
+        # fused_embedding = torch.cat([h_graph, text_embedding_pooled], dim=1)
+        # print(f'fused_embedding.shape: {fused_embedding.shape}')  # [batch_size, 2 * emb_dim]
+
+        # h_graph = self.projector(fused_embedding)
 
         mu, _ = self.dist_net(h_graph).chunk(2, dim=1)
         task_out = self.task_decoder(mu)

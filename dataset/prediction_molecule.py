@@ -69,11 +69,13 @@ class PygPredictionMoleculeDataset(InMemoryDataset):
         ), f"assays.csv.gz does not exist in {self.raw_dir}"
 
     def process(self):
+        # data_df = pd.read_csv(osp.join(self.raw_dir, "assays.csv.gz"))
         data_df = pd.read_csv(osp.join(self.raw_dir, "assays.csv.gz"))
 
         pyg_graph_list = []
         for idx, row in data_df.iterrows():
             smiles = row["smiles"]
+            # caption = row["molecule_caption"]
             graph = smiles2graph(smiles)
 
             g = Data()
@@ -102,6 +104,9 @@ class PygPredictionMoleculeDataset(InMemoryDataset):
                 y.append(float(row.iloc[col]))
 
             g.y = torch.tensor(y, dtype=torch.float32).view(1, -1)
+            # if type(caption) == float or not caption or caption == None or len(caption) == 0:
+            #     caption = ''
+            # g.caption = caption
             pyg_graph_list.append(g)
 
         pyg_graph_list = (
